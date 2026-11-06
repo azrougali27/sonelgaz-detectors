@@ -1,0 +1,2307 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <link rel="icon" type="image/png" href="ali-Ets.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>تسجيل كواشف غاز أحادي أكسيد الكربون - سونلغاز</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS for Excel handling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+   <!-- jsPDF Engine (الرابط المباشر الصحيح للمكتبة) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- html2canvas Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- ZXing Library for Barcode / QR Scanning -->
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <!-- Google Fonts Cairo -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <!-- مكتبة القراءة الحية الفورية للباركود والـ QR -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+   
+   <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            orange: '#F37021',
+                            blue: '#00539B',
+                            darkBlue: '#003366',
+                            accent: '#FFD100',
+                            bg: '#F8FAFC'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html, body {
+            max-width: 100%;
+            overflow-x: hidden;
+            font-family: 'Cairo', sans-serif;
+            background-color: #F8FAFC;
+        }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(226, 232, 240, 0.8); }
+        .glass-login { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 25px 50px -12px rgba(0, 83, 155, 0.25); }
+        .tab-btn.active { background-color: #00539B; color: white; border-bottom: 3px solid #F37021; }
+        .bg-pattern { background-image: radial-gradient(#00539B 0.75px, transparent 0.75px), radial-gradient(#F37021 0.75px, #F8FAFC 0.75px); background-size: 30px 30px; background-position: 0 0, 15px 15px; }
+        .modal-backdrop { transition: opacity 0.3s ease-in-out; }
+        .modal-content { transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out; }
+        canvas.signature-pad { touch-action: none; background-color: #fff; width: 100%; height: 140px; border-radius: 0.75rem; border: 2px dashed #cbd5e1; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col bg-pattern relative">
+
+    <!-- نافذة الكاميرا الحية المباشرة (مثل تطبيقات QR) -->
+<div id="modal-live-scanner" class="fixed inset-0 z-[99999] hidden flex flex-col items-center justify-center bg-slate-950/90 p-4">
+    <div class="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col">
+        <div class="bg-brand-darkBlue text-white p-4 flex justify-between items-center">
+            <h3 class="font-bold text-sm flex items-center gap-2">
+                <i class="fa-solid fa-camera text-brand-orange"></i>
+                <span id="scanner-modal-title">مسح الباركود المباشر للجهاز</span>
+            </h3>
+            <button onclick="stopLiveScanner()" class="bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white px-3 py-1 rounded-xl text-xs font-bold transition-all">
+                <i class="fa-solid fa-xmark text-sm"></i> إغلاق
+            </button>
+        </div>
+        <div class="p-4 bg-black flex flex-col items-center justify-center relative">
+            <!-- عنصر عرض الكاميرا الحية -->
+            <div id="interactive-reader" class="w-full h-[300px] rounded-2xl overflow-hidden bg-black"></div>
+            <p class="text-xs text-slate-400 mt-3 text-center">قم بتوجيه الكاميرا نحو باركود الكاشف ليتم قراءته تلقائياً</p>
+        </div>
+    </div>
+</div>
+
+    <!-- عنصر التقاط الكاميرا الأصلية المخفي -->
+    <input type="file" id="native-capture-input" accept="image/*" capture="environment" style="display: none;" onchange="handleImageCaptureScan(event)">
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="fixed bottom-6 left-4 right-4 z-[99999] flex flex-col items-center justify-center pointer-events-none"></div>
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+        <div class="glass-login w-full max-w-md p-6 sm:p-8 rounded-3xl shadow-2xl border-t-4 border-brand-orange space-y-6 relative overflow-hidden">
+            <div class="text-center space-y-2 relative">
+                <div class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-tr from-brand-darkBlue to-brand-blue text-brand-orange rounded-2xl shadow-lg border border-white/20 text-2xl sm:text-3xl mb-1">
+                    <i class="fa-solid fa-bolt"></i>
+                </div>
+                <h2 class="text-xl sm:text-2xl font-black text-slate-900 tracking-wide">سونلغاز الجزائر</h2>
+                <p class="text-xs text-slate-500 font-semibold">متابعة وتسجيل أجهزة كشف غاز أحادي أكسيد الكربون</p>
+            </div>
+
+            <form onsubmit="handleLogin(event)" class="space-y-4 relative">
+                <div>
+                    <label class="text-xs font-bold text-slate-700 block mb-1">اسم المستخدم</label>
+                    <input type="text" id="login-user" required placeholder="أدخل اسم المستخدم" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue font-semibold">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-700 block mb-1">كلمة المرور</label>
+                    <input type="password" id="login-pass" required placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue font-semibold">
+                </div>
+                <div id="login-error" class="text-red-500 text-xs font-bold text-center hidden">اسم المستخدم أو كلمة المرور غير صحيحة!</div>
+                <button type="submit" class="w-full bg-gradient-to-r from-brand-orange to-orange-600 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg text-sm">تسجيل الدخول</button>
+            </form>
+            <p class="text-[10px] text-center text-slate-400">تحت إشراف : AZROUG ALI</p>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="main-app" class="hidden flex-col min-h-screen w-full">
+        
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-brand-darkBlue via-brand-blue to-slate-900 text-white shadow-xl border-b-4 border-brand-orange">
+            <div class="container mx-auto px-3 sm:px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+                <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                    <div class="flex items-center gap-2">
+                        <div class="bg-white p-2 rounded-xl shadow-md border border-slate-100 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12">
+                            <i class="fa-solid font-bold text-xl sm:text-2xl text-brand-orange fa-bolt"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg sm:text-xl font-black tracking-wide flex items-center gap-2">
+                                <span>SONELGAZ</span>
+                                <span class="text-brand-orange text-[10px] sm:text-xs bg-orange-500/20 px-2 py-0.5 rounded border border-orange-500/30">سحابي متزامن</span>
+                            </h1>
+                            <p class="text-[11px] sm:text-xs text-slate-300 font-medium">تبع صوالحك غير بشويا</p>
+                        </div>
+                    </div>
+                    <button onclick="handleLogout()" title="تسجيل الخروج" class="sm:hidden bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/30 font-bold text-xs">
+                        <i class="fa-solid fa-right-from-bracket"></i> خروج
+                    </button>
+                </div>
+
+                <!-- Stats Header & Remaining Customers Indicator -->
+                <div class="flex flex-wrap items-center justify-center sm:justify-end gap-2 text-[11px] sm:text-xs w-full sm:w-auto">
+                    <div class="bg-blue-500/20 px-2.5 py-1.5 rounded-lg border border-blue-500/30 flex items-center gap-1.5">
+                        <i class="fa-solid fa-hourglass-half text-amber-300"></i>
+                        <span>المتبقي: <strong id="stat-remaining" class="text-amber-300 text-xs sm:text-sm">0 من أصل 0</strong></span>
+                    </div>
+                    <div class="bg-emerald-500/20 px-2.5 py-1.5 rounded-lg border border-emerald-500/30 flex items-center gap-1.5">
+                        <i class="fa-solid fa-check-circle text-emerald-400"></i>
+                        <span>المركب: <strong id="stat-installed" class="text-emerald-300 text-xs sm:text-sm">0</strong></span>
+                    </div>
+                    <div class="bg-amber-500/20 px-2.5 py-1.5 rounded-lg border border-amber-500/30 flex items-center gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                        <span>المكررين: <strong id="stat-duplicates" class="text-amber-300 text-xs sm:text-sm">0</strong></span>
+                    </div>
+                    <button onclick="handleLogout()" title="تسجيل الخروج" class="hidden sm:flex bg-red-500/20 hover:bg-red-500/40 text-red-300 px-3 py-1.5 rounded-lg border border-red-500/30 font-bold items-center gap-1">
+                        <i class="fa-solid fa-right-from-bracket"></i> خروج
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Current File Information Banner -->
+        <div id="active-file-banner" class="bg-slate-800 text-white py-2 px-3 sm:px-4 text-xs font-bold border-b border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <div class="flex items-center gap-2 text-center sm:text-right">
+                <i class="fa-solid fa-file-contract text-brand-orange text-sm"></i>
+                <span>الملف / الكرطون الحالي: <strong id="active-file-name" class="text-amber-300 font-mono text-xs sm:text-sm">لم يتم اختيار أي ملف</strong></span>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="active-file-stats" class="text-slate-300">الزبائن: <strong class="text-white">0</strong></span>
+                <button onclick="confirmCloseCurrentFile()" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1">
+                    <i class="fa-solid fa-xmark"></i> إغلاق الملف الحالي
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="bg-white shadow-md border-b border-slate-200 sticky top-0 z-40">
+            <div class="container mx-auto px-2 sm:px-4 flex overflow-x-auto no-scrollbar">
+                <button onclick="switchTab('registration')" id="tab-registration" class="tab-btn active px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 whitespace-nowrap nav-tab-item" data-tab="registration">
+                    <i class="fa-solid fa-file-pen text-base"></i>
+                    <span>تسجيل جديد</span>
+                </button>
+                <button onclick="switchTab('import')" id="tab-import" class="tab-btn px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 text-slate-600 hover:text-brand-blue whitespace-nowrap nav-tab-item" data-tab="import">
+                    <i class="fa-solid fa-file-import text-base"></i>
+                    <span>استيراد القائمة</span>
+                </button>
+                <button onclick="switchTab('files')" id="tab-files" class="tab-btn px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 text-slate-600 hover:text-brand-blue relative whitespace-nowrap nav-tab-item" data-tab="files">
+                    <i class="fa-solid fa-folder-tree text-base"></i>
+                    <span>أرشيف الملفات</span>
+                    <span id="badge-files-count" class="bg-brand-blue text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">0</span>
+                </button>
+                <button onclick="switchTab('duplicates')" id="tab-duplicates" class="tab-btn px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 text-slate-600 hover:text-brand-blue relative whitespace-nowrap nav-tab-item" data-tab="duplicates">
+                    <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                    <span>المكررة</span>
+                    <span id="badge-duplicates" class="hidden bg-amber-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">0</span>
+                </button>
+                <button onclick="switchTab('records')" id="tab-records" class="tab-btn px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 text-slate-600 hover:text-brand-blue whitespace-nowrap nav-tab-item" data-tab="records">
+                    <i class="fa-solid fa-table-list text-base"></i>
+                    <span>السجل الكامل</span>
+                </button>
+                <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn px-4 sm:px-6 py-3 font-bold text-xs sm:text-sm flex items-center gap-2 text-slate-600 hover:text-brand-blue whitespace-nowrap nav-tab-item" data-tab="settings">
+                    <i class="fa-solid fa-gear text-base"></i>
+                    <span>الإعدادات</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-3 sm:px-4 py-4 sm:py-6 flex-grow max-w-full">
+
+            <!-- TAB 1: Registration Form -->
+            <section id="sec-registration" class="space-y-6 app-section" data-section="registration">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Search List -->
+                    <div class="lg:col-span-4 space-y-4">
+                        <div class="glass-card p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200">
+                            <h2 class="font-bold text-slate-800 text-sm sm:text-base mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-magnifying-glass text-brand-orange"></i>
+                                1. اختيار الزبون من القائمة
+                            </h2>
+                            <div class="relative mb-3">
+                                <input type="text" id="cust-search" oninput="filterCustomerList()" placeholder="ابحث بالاسم، اللقب، أو المرجع..." class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue">
+                            </div>
+                            <div id="customer-list-box" class="max-h-[420px] overflow-y-auto space-y-2 pr-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Main Form -->
+                    <div class="lg:col-span-8">
+                        <form id="form-registration" onsubmit="saveRegistration(event)" class="glass-card p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+                            
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-3 gap-2">
+                                <h2 class="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
+                                    <i class="fa-solid fa-shield-halved text-brand-blue"></i>
+                                    2. تسجيل جهازي الكاشف والمعلومات
+                                </h2>
+                                <span id="auto-timestamp" class="text-xs bg-slate-100 text-slate-700 px-4 py-1.5 rounded-full font-mono font-extrabold border border-slate-300 shadow-inner text-center">--/--/----</span>
+                            </div>
+
+                            <!-- ETS & Contractor / Date pose -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Installateur / ETS <span class="text-red-500">*</span></label>
+                                    <input type="text" id="reg-ets" value="Ets Bendahmen touati" required class="w-full bg-slate-50 border border-slate-300 font-bold text-sm rounded-xl p-2.5 outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Date pose (قابل للتعديل) <span class="text-brand-blue">*</span></label>
+                                    <input type="text" id="reg-date-display" required placeholder="DD/MM/YYYY" class="w-full bg-white border border-brand-blue text-brand-blue font-mono font-black text-sm rounded-xl p-2.5 px-5 outline-none tracking-wide text-center focus:ring-2 focus:ring-brand-orange">
+                                </div>
+                            </div>
+
+                            <!-- Customer Data & Smart Reference -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Référence <span class="text-red-500">*</span></label>
+                                    <input type="text" id="reg-reference" oninput="checkReferenceInput(this.value)" required placeholder="أدخل المرجع" class="w-full bg-white border border-slate-300 font-bold text-brand-blue text-sm rounded-lg p-2.5 outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Nom & Prénom <span class="text-red-500">*</span></label>
+                                    <input type="text" id="reg-fullname" oninput="handleCustomerNameChange(this.value)" required placeholder="اسم واللقب" class="w-full bg-white border border-slate-300 font-bold text-slate-800 text-sm rounded-lg p-2.5 outline-none">
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Adresse </label>
+                                    <input type="text" id="reg-location" placeholder="العنوان الكامل" class="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg p-2.5 outline-none">
+                                </div>
+                            </div>
+
+                            <!-- Representative / Receiver Section -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-orange-50/40 p-4 rounded-xl border border-orange-100">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Qualité représentant <span class="text-red-500">*</span></label>
+                                    <select id="reg-qualite" onchange="handleQualiteChange()" required class="w-full bg-white border border-slate-300 font-bold text-slate-800 text-sm rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-brand-orange">
+                                        <option value="L'abonné(e)">L'abonné(e) </option>
+                                        <option value="L'épouse">L'épouse </option>
+                                        <option value="Le mari">Le mari </option>
+                                        <option value="Le fils">Le fils </option>
+                                        <option value="La fille">La fille </option>
+                                        <option value="Les proches">Les proches </option>
+                                        <option value="Le voisin">Le voisin </option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Nom représentant <span class="text-red-500">*</span></label>
+                                    <input type="text" id="reg-receiver" required readonly placeholder="اسم المستلم" class="w-full bg-slate-100 border border-slate-300 text-slate-800 font-bold text-sm rounded-lg p-2.5 outline-none">
+                                </div>
+                            </div>
+
+                            <!-- ID Type & Number Validation -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> Type pièce <span class="text-red-500">*</span></label>
+                                    <select id="reg-id-type" onchange="handleIdTypeChange()" required class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-brand-blue">
+                                        <option value="Carte nationale d'identité">Carte nationale d'identité </option>
+                                        <option value="Permis de conduire">Permis de conduire </option>
+                                        <option value="Passeport">Passeport </option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1"> N° pièce <span class="text-red-500">*</span></label>
+                                    <input type="text" id="reg-id-number" oninput="validateIdNumber()" required placeholder="أدخل رقم الهوية" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm font-mono rounded-lg p-2.5 outline-none">
+                                    <span id="id-error-msg" class="text-[11px] text-red-500 font-bold mt-1 hidden"></span>
+                                </div>
+                            </div>
+
+                            <!-- Serial Numbers with Native Camera Capture -->
+                            <div class="border-t border-slate-200 pt-4 space-y-4">
+                                <h3 class="text-xs sm:text-sm font-bold text-brand-darkBlue flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
+                                    <span class="flex items-center gap-2">
+                                        <i class="fa-solid fa-boxes-stacked text-brand-orange"></i>
+                                        الأرقام التسلسلية للكاشفين (18 رقماً لكل جهاز)
+                                    </span>
+                                    <span class="text-[10px] sm:text-[11px] text-slate-400 font-normal">الكتابة يدوياً أو عبر كاميرا الهاتف</span>
+                                </h3>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="p-3 sm:p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-xs font-black text-brand-blue uppercase block"> N° série 1 </label>
+                                            <button type="button" onclick="startCameraBarcodeScanner(1)" class="bg-brand-blue text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm hover:bg-blue-700">
+                                                <i class="fa-solid fa-camera"></i> مسح بكاميرا الهاتف
+                                            </button>
+                                        </div>
+                                        <input type="text" id="reg-sn-1" oninput="validateSerialNumber(1)" maxlength="18" required placeholder="أدخل 18 رقماً للجهاز الأول" class="w-full bg-white border border-slate-300 text-slate-800 text-sm font-mono rounded-lg p-2.5 outline-none">
+                                        <span id="sn1-error-msg" class="text-[11px] text-red-500 font-bold hidden">يجب إدخال 18 رقماً بالضبط!</span>
+                                    </div>
+
+                                    <div class="p-3 sm:p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-xs font-black text-brand-blue uppercase block"> N° série 2 </label>
+                                            <button type="button" onclick="startCameraBarcodeScanner(2)" class="bg-brand-blue text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm hover:bg-blue-700">
+                                                <i class="fa-solid fa-camera"></i> مسح بكاميرا الهاتف
+                                            </button>
+                                        </div>
+                                        <input type="text" id="reg-sn-2" oninput="validateSerialNumber(2)" maxlength="18" required placeholder="أدخل 18 رقماً للجهاز الثاني" class="w-full bg-white border border-slate-300 text-slate-800 text-sm font-mono rounded-lg p-2.5 outline-none">
+                                        <span id="sn2-error-msg" class="text-[11px] text-red-500 font-bold hidden">يجب إدخال 18 رقماً بالضبط!</span>
+                                    </div>
+                                </div>
+
+                                <div class="p-4 rounded-xl border border-slate-200 bg-blue-50/30 space-y-2">
+                                    <label class="text-xs font-bold text-slate-700 block">حالة التركيب المشتركة للجهازين <span class="text-red-500">*</span></label>
+                                    <select id="reg-status" onchange="handleStatusChange()" required class="w-full bg-white border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 font-bold outline-none">
+                                    <option value="تم التركيب">Pose (تم التركيب)</option>
+                                    <option value="Dja Pose">Dja Pose (أخذها منذ مدة)</option>
+                                    <option value="غائب">Absent (غائب)</option>
+                                    <option value="رفض التركيب">Refus de Pose (رفض التركيب)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Digital Signature Pad Section -->
+                            <div class="border-t border-slate-200 pt-4 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-signature text-brand-orange"></i>
+                                        توقيع الزبون أو المستلم (اختياري)
+                                    </label>
+                                    <button type="button" onclick="clearSignature()" class="text-xs text-red-600 hover:text-red-800 font-bold flex items-center gap-1">
+                                        <i class="fa-solid fa-rotate-right"></i> مسح وإعادة
+                                    </button>
+                                </div>
+                                <div class="relative bg-white rounded-xl border border-slate-300 overflow-hidden shadow-inner">
+                                    <canvas id="signature-canvas" class="signature-pad"></canvas>
+                                    <div id="signature-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-400 text-xs font-semibold">
+                                        قم بالتوقيع هنا بإصبعك أو بقلم الهاتف
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Notes -->
+                            <div>
+                                <label class="text-xs font-semibold text-slate-700 block mb-1">ملاحظات / سبب الغياب أو الرفض</label>
+                                <textarea id="reg-notes" rows="2" placeholder="أكتب أي ملاحظات إضافية هنا..." class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-2.5 outline-none"></textarea>
+                            </div>
+
+                            <!-- Form Buttons -->
+                            <div class="flex items-center gap-3 pt-2">
+                                <button type="submit" id="btn-save-submit" class="flex-1 bg-brand-orange hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg text-sm flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-floppy-disk"></i>
+                                    <span>حفظ العملية</span>
+                                </button>
+                                <button type="button" onclick="resetForm()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-4 rounded-xl text-sm">إلغاء</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: Import Excel -->
+            <section id="sec-import" class="hidden space-y-6 app-section" data-section="import">
+                <div class="max-w-3xl mx-auto glass-card p-6 sm:p-8 rounded-2xl border text-center space-y-6">
+                    <div class="w-16 h-16 bg-blue-50 text-brand-blue rounded-2xl flex items-center justify-center mx-auto text-2xl">
+                        <i class="fa-solid fa-file-excel"></i>
+                    </div>
+                    <h2 class="text-lg sm:text-xl font-bold text-slate-800">رفع واستيراد قائمة الزبائن للسحابة</h2>
+                    <div class="border-2 border-dashed border-slate-300 rounded-2xl p-6 sm:p-8 bg-slate-50 hover:bg-slate-100 relative cursor-pointer">
+                        <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" onchange="handleExcelImport(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl text-slate-400 mb-2"></i>
+                        <p class="text-sm font-bold text-slate-700">اضغط هنا أو اسحب ملف Excel لرفعه للسحابة</p>
+                    </div>
+                    <div id="import-summary" class="hidden bg-emerald-50 text-emerald-800 p-4 rounded-xl border text-sm font-medium"></div>
+                </div>
+            </section>
+
+            <!-- TAB 3: Saved Files & Archive Management -->
+            <section id="sec-files" class="hidden space-y-6 app-section" data-section="files">
+                <div class="glass-card p-4 sm:p-6 rounded-2xl border space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h2 class="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open text-brand-orange"></i>
+                            إدارة و متابعة الملفات 
+                        </h2>
+                        <span class="text-xs bg-blue-50 text-brand-blue border border-blue-200 font-bold px-3 py-1 rounded-full">تحديث فوري</span>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border">
+                        <table class="w-full text-right text-xs">
+                            <thead class="bg-slate-100 font-bold border-b text-slate-700">
+                                <tr>
+                                    <th class="p-3">اسم الملف / الكرطون</th>
+                                    <th class="p-3">التاريخ والوقت</th>
+                                    <th class="p-3 text-center">الزبائن</th>
+                                    <th class="p-3 text-center">الحالة</th>
+                                    <th class="p-3 text-center min-w-[180px]">التحكم والإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-files-body" class="divide-y bg-white"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: Duplicates View -->
+            <section id="sec-duplicates" class="hidden space-y-6 app-section" data-section="duplicates">
+                <div class="glass-card p-4 sm:p-6 rounded-2xl border space-y-4">
+                    <h2 class="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-500"></i>
+                        تتبع العناصر المكررة
+                    </h2>
+                    <div class="overflow-x-auto rounded-xl border">
+                        <table class="w-full text-right text-xs">
+                            <thead class="bg-slate-100 font-bold border-b">
+                                <tr>
+                                    <th class="p-3">Référence</th>
+                                    <th class="p-3">Nom & Prénom</th>
+                                    <th class="p-3">Type pièce</th>
+                                    <th class="p-3">N° pièce</th>
+                                    <th class="p-3">Qualité</th>
+                                    <th class="p-3">Nom représentant</th>
+                                    <th class="p-3">N° série (1 & 2)</th>
+                                    <th class="p-3">Installateur</th>
+                                    <th class="p-3 min-w-[110px]">Date pose</th>
+                                    <th class="p-3">التوقيع</th>
+                                    <th class="p-3">سبب التكرار</th>
+                                    <th class="p-3 text-center">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-duplicates-body" class="divide-y bg-white"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: Records Table & Export -->
+            <section id="sec-records" class="hidden space-y-6 app-section" data-section="records">
+                <div class="glass-card p-4 sm:p-6 rounded-2xl border space-y-4">
+                    <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 border-b pb-4">
+                        <h2 class="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
+                            <i class="fa-solid fa-table-list text-brand-blue"></i>
+                            السجل الكامل (Liste de Pose)
+                        </h2>
+                        
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="confirmDeleteAllRegistrations()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-trash-can"></i> حذف الكل
+                            </button>
+                            <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-excel"></i> Excel
+                            </button>
+                            <button onclick="exportToPDF()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-pdf"></i> PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ADVANCED FILTER CONTROLS BAR -->
+                    <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                            <div class="md:col-span-4 relative">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">بحث حر بالنص</label>
+                                <span class="absolute inset-y-0 right-0 top-6 flex items-center pr-3 pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                </span>
+                                <input type="text" id="records-search-input" oninput="filterRecordsTable()" placeholder="المرجع، أرقام الهوية، السيريال، أو الاسم..." class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-xl py-2.5 pr-9 pl-3 outline-none focus:ring-2 focus:ring-brand-blue font-semibold">
+                            </div>
+
+                            <div class="md:col-span-2">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">من تاريخ</label>
+                                <input type="date" id="filter-date-from" onchange="filterRecordsTable()" class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-xl p-2.5 outline-none font-bold">
+                            </div>
+
+                            <div class="md:col-span-2">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">إلى تاريخ</label>
+                                <input type="date" id="filter-date-to" onchange="filterRecordsTable()" class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-xl p-2.5 outline-none font-bold">
+                            </div>
+
+                            <div class="md:col-span-3">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">فلترة حسب حالة التركيب</label>
+                                <select id="filter-status-select" onchange="filterRecordsTable()" class="w-full bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-xl p-2.5 outline-none">
+                                    <option value="">جميع الحالات </option>
+                                    <option value="تم التركيب"> Pose</option>
+                                    <option value="Dja Pose">Dja Pose </option>
+                                    <option value="غائب"> Absent</option>
+                                    <option value="رفض التركيب"> Refus de Pose </option>
+                                </select>
+                            </div>
+
+                            <div class="md:col-span-1 flex items-end">
+                                <button onclick="resetRecordsFilters()" title="إعادة ضبط الفلترة" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1">
+                                    <i class="fa-solid fa-rotate-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border">
+                        <table class="w-full text-right text-xs">
+                            <thead class="bg-slate-100 font-bold border-b">
+                                <tr>
+                                    <th class="p-3">Référence</th>
+                                    <th class="p-3">Nom & Prénom</th>
+                                    <th class="p-3">Adresse</th>
+                                    <th class="p-3 min-w-[110px]">Date pose</th>
+                                    <th class="p-3">N° série 1</th>
+                                    <th class="p-3">N° série 2</th>
+                                    <th class="p-3">Type pièce</th>
+                                    <th class="p-3">N° pièce</th>
+                                    <th class="p-3">Qualité</th>
+                                    <th class="p-3">Nom représentant</th>
+                                    <th class="p-3">Installateur</th>
+                                    <th class="p-3 text-center">حالة التركيب</th>
+                                    <th class="p-3 text-center">التوقيع</th>
+                                    <th class="p-3 text-center">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-records-body" class="divide-y bg-white"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: Settings View -->
+            <section id="sec-settings" class="hidden space-y-6 app-section" data-section="settings">
+                <div class="max-w-3xl mx-auto glass-card p-4 sm:p-6 rounded-2xl border space-y-6">
+                    <div class="flex items-center gap-3 border-b pb-4">
+                        <div class="w-12 h-12 bg-brand-blue/10 text-brand-blue rounded-2xl flex items-center justify-center text-xl font-bold flex-shrink-0">
+                            <i class="fa-solid fa-users-gear"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-base sm:text-lg font-bold text-slate-800">إدارة الحسابات وصلاحيات الوصول للمنظومة</h2>
+                            <p class="text-xs text-slate-500">إضافة مستخدمين جدد وتخصيص الواجهات بدقة</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-4">
+                            <h3 class="text-xs font-black text-brand-darkBlue uppercase flex items-center gap-2">
+                                <i class="fa-solid fa-user-shield text-brand-orange"></i> إدارة الأشخاص وصلاحيات الولوج
+                            </h3>
+                            
+                            <div class="bg-white p-4 rounded-xl border shadow-sm space-y-3">
+                                <h4 class="text-xs font-bold text-slate-700">إضافة مستخدم جديد أو عون ميداني</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div>
+                                        <label class="text-[11px] font-bold text-slate-600 block mb-1">اسم المستخدم للدخول</label>
+                                        <input type="text" id="new-user-name" placeholder="مثال: Ahmed" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-brand-blue">
+                                    </div>
+                                    <div>
+                                        <label class="text-[11px] font-bold text-slate-600 block mb-1">كلمة المرور</label>
+                                        <input type="password" id="new-user-pass" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-brand-blue">
+                                    </div>
+                                    <div>
+                                        <label class="text-[11px] font-bold text-slate-600 block mb-1">نوع الحساب</label>
+                                        <select id="new-user-role" onchange="togglePermissionsChecklist()" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-brand-blue">
+                                            <option value="مشرف / مدير (Admin)">مشرف / مدير (Admin - كل الصلاحيات)</option>
+                                            <option value="عون ميداني مخصص">عون ميداني (صلاحيات مخصصة)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div id="permissions-checklist-box" class="hidden bg-blue-50/50 p-3 rounded-xl border border-blue-100 space-y-2">
+                                    <label class="text-[11px] font-black text-brand-blue block">حدد الواجهات والأقسام المسموح لهذا المستخدم بالدخول إليها:</label>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="registration" class="perm-checkbox rounded text-brand-blue" checked> واجهة التسجيل (الجديد)
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="import" class="perm-checkbox rounded text-brand-blue"> استيراد قائمة الزبائن (Excel)
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="files" class="perm-checkbox rounded text-brand-blue"> أرشيف الملفات
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="duplicates" class="perm-checkbox rounded text-brand-blue"> العناصر المكررة
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="records" class="perm-checkbox rounded text-brand-blue" checked> السجل الكامل (Liste de Pose)
+                                        </label>
+                                        <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                            <input type="checkbox" value="settings" class="perm-checkbox rounded text-brand-blue"> إعدادات المنظومة
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button type="button" onclick="addNewSystemUser()" class="bg-brand-blue hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-xs shadow-sm flex items-center gap-1.5 mt-2">
+                                    <i class="fa-solid fa-user-plus"></i> إضافة المستخدم وتطبيق الصلاحيات
+                                </button>
+                            </div>
+
+                            <div class="overflow-x-auto rounded-xl border bg-white">
+                                <table class="w-full text-right text-xs">
+                                    <thead class="bg-slate-100 font-bold border-b text-slate-700">
+                                        <tr>
+                                            <th class="p-2.5">اسم المستخدم</th>
+                                            <th class="p-2.5">نوع الحساب والصلاحيات</th>
+                                            <th class="p-2.5 text-center">الإجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-users-body" class="divide-y"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-4">
+                            <h3 class="text-xs font-black text-brand-darkBlue uppercase flex items-center gap-2">
+                                <i class="fa-solid fa-file-invoice text-brand-blue"></i> تخصيص ترويسة التقارير الرسمية (PDF / Excel Header)
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1">اسم الوكالة أو المديرية (مثل: Agence Mosta Ouast)</label>
+                                    <input type="text" id="setting-agency-name" value="Agence Mosta Ouast" class="w-full bg-white border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue">
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-700 block mb-1">اسم المقاول / الورشة الافتراضي (Installateur / ETS)</label>
+                                    <input type="text" id="setting-default-ets" value="Ets Bendahmen touati" class="w-full bg-white border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold text-slate-700 block mb-1">إدراج الشعار الرسمي (شعار المؤسسة أو الورشة)</label>
+                                <input type="file" id="setting-logo-input" accept="image/*" onchange="handleLogoUpload(event)" class="w-full bg-white border border-slate-300 text-slate-700 text-xs rounded-xl p-2 file:ml-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-brand-blue file:text-white cursor-pointer">
+                                <div id="logo-preview-box" class="mt-2 hidden flex items-center gap-3 bg-white p-2 rounded-xl border">
+                                    <img id="logo-preview-img" class="h-10 object-contain" />
+                                    <span class="text-xs text-emerald-600 font-bold">تم تحميل وتخزين الشعار بنجاح!</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-4">
+                            <h3 class="text-xs font-black text-brand-darkBlue uppercase flex items-center gap-2">
+                                <i class="fa-solid fa-sliders text-brand-orange"></i> إعدادات التشغيل والتنبيه
+                            </h3>
+                            <div>
+                                <label class="text-xs font-bold text-slate-700 block mb-1">حجم الكرطون / الدفعة للتنبيه (عدد الزبائن)</label>
+                                <input type="number" id="setting-milestone-size" value="30" class="w-full bg-white border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue">
+                            </div>
+                        </div>
+
+                        <div class="pt-2">
+                            <button onclick="saveAppSettings()" class="w-full bg-brand-blue hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm shadow-md flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-floppy-disk"></i> حفظ وتطبيق جميع الإعدادات
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <footer class="bg-white border-t py-4 mt-auto">
+            <div class="container mx-auto text-center text-xs text-slate-500">
+                حقوق النشر © سونلغاز - منظومة كواشف غاز أحادي أكسيد الكربون | إشراف: AZROUG ALI
+            </div>
+        </footer>
+    </div>
+
+    <!-- MODAL 1: CONFIRM DELETE MODAL -->
+    <div id="modal-delete" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm modal-backdrop">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-red-100 text-center space-y-4 modal-content">
+            <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <h3 id="delete-modal-title" class="text-lg font-black text-slate-800">تأكيد عملية الحذف</h3>
+                <p id="delete-modal-msg" class="text-xs text-slate-500 mt-1">هل أنت متأكد من رغبتك في حذف هذا العنصر؟ لا يمكن التراجع عن هذه العملية.</p>
+            </div>
+            <div class="flex items-center gap-3 pt-2">
+                <button id="btn-confirm-delete" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md"> حـذف</button>
+                <button onclick="closeModal('modal-delete')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: EDIT FILE NAME MODAL -->
+    <div id="modal-edit-file" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm modal-backdrop">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-100 space-y-4 modal-content">
+            <div class="flex items-center gap-3 border-b pb-3">
+                <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">تعديل اسم الملف</h3>
+                    <p class="text-[11px] text-slate-500">قم بتغيير اسم الملف المحفوظ في الأرشيف </p>
+                </div>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-700 block mb-1">اسم الملف الجديد</label>
+                <input type="text" id="modal-file-name-input" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-3 outline-none focus:ring-2 focus:ring-amber-500">
+            </div>
+            <div class="flex items-center gap-3 pt-2">
+                <button id="btn-save-file-name" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md">حفظ التغييرات</button>
+                <button onclick="closeModal('modal-edit-file')" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: 30 CUSTOMERS MILESTONE MODAL -->
+    <div id="modal-milestone" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm modal-backdrop">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-blue-100 text-center space-y-5 modal-content">
+            <div class="w-16 h-16 bg-blue-100 text-brand-blue rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+                <i class="fa-solid fa-boxes-packing"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-black text-slate-800">تنبيه: اكتمال الكرطون / الدفعة!</h3>
+                <p id="milestone-msg" class="text-xs text-slate-500 mt-1">لقد أتممت الحد المحدد من الزبائن في هذا الكرطون. ماذا تريد أن تفعل؟</p>
+            </div>
+            
+            <div id="new-box-input-container" class="hidden space-y-2 text-right">
+                <label class="text-xs font-bold text-slate-700 block">أدخل رقم أو اسم الكرطون الجديد:</label>
+                <input type="text" id="new-box-name-input" placeholder="مثال: Carton رقم 02" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm font-bold rounded-xl p-3 outline-none focus:ring-2 focus:ring-brand-blue">
+            </div>
+
+            <div class="flex flex-col gap-2.5 pt-2">
+                <button id="btn-action-open-new-box" onclick="promptForNewBoxName()" class="w-full bg-brand-blue hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow-md flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-folder-plus"></i> فتح كرطون جديد
+                </button>
+                <button id="btn-action-confirm-new-box" onclick="createNewBox()" class="hidden w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-xs shadow-md flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-check"></i> تأكيد وإنشاء الكرطون الجديد
+                </button>
+                <button onclick="closeModal('modal-milestone')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs">
+                    تكملة التسجيل بشكل عادي ضمن هذا الملف
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Engine -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBL9JnrFONa2A5_VrasbTaoxv8Ic-_Svjk",
+            authDomain: "sonelgaz-app-3f2c5.firebaseapp.com",
+            databaseURL: "https://sonelgaz-app-3f2c5-default-rtdb.firebaseio.com",
+            projectId: "sonelgaz-app-3f2c5",
+            storageBucket: "sonelgaz-app-3f2c5.firebasestorage.app",
+            messagingSenderId: "78231034168",
+            appId: "1:78231034168:web:ff83efbda4b6369b27c9cd"
+        };
+
+        let db;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+        } catch (err) {
+            console.log("Firebase init error:", err);
+        }
+
+        let mainList = [];
+        let registrations = [];
+        let savedFiles = [];
+        let activeFileKey = null;
+        let editingKey = null;
+        let pendingDeleteCallback = null;
+        
+        let signatureCanvas, signatureCtx, isDrawing = false, hasSignature = false;
+        let activeScannerDeviceNum = null;
+
+        function getFormattedDate(d = new Date()) {
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+
+        function getFormattedDateForFilename(d = new Date()) {
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}-${month}-${year}`;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if(!editingKey) {
+                document.getElementById('reg-date-display').value = getFormattedDate();
+            }
+            initSignaturePad();
+            loadAppSettingsToForm();
+            renderUsersTable();
+            togglePermissionsChecklist();
+        });
+
+        setInterval(() => {
+            const formattedDate = getFormattedDate();
+            document.getElementById('auto-timestamp').innerText = formattedDate;
+        }, 1000);
+
+        window.onload = function() {
+            const isLogged = sessionStorage.getItem('sonelgaz_logged');
+            if (isLogged === 'true') {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('flex');
+                
+                applyUserPermissionsUI();
+                initCloudListeners();
+            } else {
+                document.getElementById('login-screen').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+            }
+        };
+
+        // Signature Pad Implementation
+        function initSignaturePad() {
+            signatureCanvas = document.getElementById('signature-canvas');
+            if (!signatureCanvas) return;
+            signatureCtx = signatureCanvas.getContext('2d');
+
+            function resizeCanvas() {
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                signatureCanvas.width = signatureCanvas.offsetWidth * ratio;
+                signatureCanvas.height = signatureCanvas.offsetHeight * ratio;
+                signatureCtx.scale(ratio, ratio);
+                signatureCtx.lineWidth = 2.5;
+                signatureCtx.lineCap = 'round';
+                signatureCtx.strokeStyle = '#003366';
+            }
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            function startPosition(e) {
+                isDrawing = true;
+                hasSignature = true;
+                document.getElementById('signature-placeholder').classList.add('hidden');
+                draw(e);
+            }
+
+            function endPosition() {
+                isDrawing = false;
+                signatureCtx.beginPath();
+            }
+
+            function draw(e) {
+                if (!isDrawing) return;
+                const rect = signatureCanvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                if (clientX === undefined || clientY === undefined) return;
+
+                const x = clientX - rect.left;
+                const y = clientY - rect.top;
+
+                signatureCtx.lineTo(x, y);
+                signatureCtx.stroke();
+                signatureCtx.beginPath();
+                signatureCtx.moveTo(x, y);
+            }
+
+            signatureCanvas.addEventListener('mousedown', startPosition);
+            signatureCanvas.addEventListener('mouseup', endPosition);
+            signatureCanvas.addEventListener('mousemove', draw);
+
+            signatureCanvas.addEventListener('touchstart', (e) => { startPosition(e); e.preventDefault(); });
+            signatureCanvas.addEventListener('touchend', (e) => { endPosition(); e.preventDefault(); });
+            signatureCanvas.addEventListener('touchmove', (e) => { draw(e); e.preventDefault(); });
+        }
+
+        function clearSignature() {
+            if (!signatureCtx || !signatureCanvas) return;
+            signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            hasSignature = false;
+            document.getElementById('signature-placeholder').classList.remove('hidden');
+        }
+
+       // ================= REAL-TIME LIVE CAMERA SCANNER (QR/BARCODE) =================
+        let html5QrCode = null;
+        let currentScanningDeviceNum = null;
+
+        function startCameraBarcodeScanner(deviceNum) {
+            currentScanningDeviceNum = deviceNum;
+            document.getElementById('scanner-modal-title').innerText = `مسح N° série ${deviceNum} بالكاميرا الحية`;
+            openModal('modal-live-scanner');
+
+            setTimeout(() => {
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("interactive-reader");
+                }
+
+                const config = { 
+                    fps: 15, 
+                    qrbox: { width: 280, height: 120 },
+                    aspectRatio: 1.777778
+                };
+
+                html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    (decodedText, decodedResult) => {
+                        // عند النجاح في قراءة الباركود مباشرة
+                        handleLiveScanSuccess(decodedText);
+                    },
+                    (errorMessage) => {
+                        // أخطاء البحث المستمر عن الباركود في الإطارات يتم تجاوزها صامتاً
+                    }
+                ).catch(err => {
+                    console.error("Camera start error:", err);
+                    showToast('تعذر تشغيل الكاميرا المباشرة، تأكد من إعطاء الصلاحية للمتصفح.', 'error');
+                    closeModal('modal-live-scanner');
+                });
+            }, 300);
+        }
+
+        function stopLiveScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    closeModal('modal-live-scanner');
+                }).catch(err => {
+                    closeModal('modal-live-scanner');
+                });
+            } else {
+                closeModal('modal-live-scanner');
+            }
+        }
+
+        function handleLiveScanSuccess(rawCode) {
+            // تنظيف النص المكتشف واستخراج الأرقام فقط
+            const cleanText = rawCode.replace(/\D/g, '');
+            
+            if (cleanText.length >= 10) {
+                // ضبط الرقم ليكون 18 رقماً بالضبط (أو أخذ الرقم الصحيح المكتشف)
+                const finalCode = cleanText.length >= 18 ? cleanText.slice(0, 18) : cleanText;
+                
+                // إدخال الرقم التسلسلي بشكل تلقائي وفوري في الخانة المناسبة (1 أو 2)
+                const inputElement = document.getElementById(`reg-sn-${currentScanningDeviceNum}`);
+                if (inputElement) {
+                    inputElement.value = finalCode;
+                    // تفعيل التحقق التلقائي للرقم
+                    validateSerialNumber(currentScanningDeviceNum);
+                }
+
+                // اهتزاز الهاتف وصوت تنبيه مؤكد
+                if (navigator.vibrate) {
+                    navigator.vibrate(150);
+                }
+                playBeepSound();
+                showToast(`تم إدخال N° série ${currentScanningDeviceNum} تلقائياً: ${finalCode}`);
+
+                const scannedNum = currentScanningDeviceNum;
+                
+                // إغلاق الكاميرا الحية والانتقال بسلاسة
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => {
+                        closeModal('modal-live-scanner');
+                        
+                        // إذا كان الجهاز الأول، افتح كاميرا الجهاز الثاني تلقائياً بعد نصف ثانية
+                        if (scannedNum === 1) {
+                            setTimeout(() => {
+                                startCameraBarcodeScanner(2);
+                            }, 500);
+                        }
+                    }).catch(() => {
+                        closeModal('modal-live-scanner');
+                    });
+                } else {
+                    closeModal('modal-live-scanner');
+                }
+
+            } else {
+                showToast('الرمز المكتشف قصير جداً، يرجى توجيه الكاميرا نحو الباركود بوضوح.', 'error');
+            }
+        }
+
+        function playBeepSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 850;
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.1);
+            } catch (e) {}
+        }
+        // =======================================================================
+
+        function playBeepSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 800;
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.1);
+            } catch (e) {}
+        }
+        // =======================================================================
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const bgClass = type === 'success' ? 'bg-emerald-600' : (type === 'error' ? 'bg-red-600' : 'bg-brand-blue');
+            const iconClass = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info');
+
+            toast.className = `pointer-events-auto ${bgClass} text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-xs sm:text-sm font-bold transition-all duration-300 transform scale-95 opacity-0 w-full border border-white/30 mb-2`;
+            toast.innerHTML = `<i class="fa-solid ${iconClass} text-base sm:text-lg flex-shrink-0"></i><span class="flex-grow">${message}</span>`;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('scale-95', 'opacity-0');
+                toast.classList.add('scale-100', 'opacity-100');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.remove('scale-100', 'opacity-100');
+                toast.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+            if (modalId === 'modal-milestone') {
+                document.getElementById('new-box-input-container').classList.add('hidden');
+                document.getElementById('btn-action-open-new-box').classList.remove('hidden');
+                document.getElementById('btn-action-confirm-new-box').classList.add('hidden');
+            }
+        }
+
+        // ================= USERS & PERMISSIONS SYSTEM =================
+        function getSystemUsers() {
+            try {
+                const stored = localStorage.getItem('sonelgaz_system_users');
+                if (stored) return JSON.parse(stored);
+            } catch(e) {}
+            return [{ 
+                username: 'Azrougali', 
+                password: 'aliazroug', 
+                role: 'مشرف / مدير (Admin)',
+                permissions: ['registration', 'import', 'files', 'duplicates', 'records', 'settings']
+            }];
+        }
+
+        function saveSystemUsers(users) {
+            localStorage.setItem('sonelgaz_system_users', JSON.stringify(users));
+        }
+
+        function togglePermissionsChecklist() {
+            const roleSelect = document.getElementById('new-user-role');
+            const checklistBox = document.getElementById('permissions-checklist-box');
+            if (!roleSelect || !checklistBox) return;
+
+            if (roleSelect.value === 'مشرف / مدير (Admin)') {
+                checklistBox.classList.add('hidden');
+            } else {
+                checklistBox.classList.remove('hidden');
+            }
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById('login-user').value.trim();
+            const pass = document.getElementById('login-pass').value.trim();
+            
+            const users = getSystemUsers();
+            const foundUser = users.find(u => u.username === user && u.password === pass);
+
+            if (foundUser) {
+                sessionStorage.setItem('sonelgaz_logged', 'true');
+                sessionStorage.setItem('sonelgaz_current_user', foundUser.username);
+                sessionStorage.setItem('sonelgaz_current_role', foundUser.role);
+                sessionStorage.setItem('sonelgaz_current_perms', JSON.stringify(foundUser.permissions || []));
+
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('flex');
+                
+                applyUserPermissionsUI();
+                initCloudListeners();
+                showToast(`مرحباً بك (${foundUser.username})! تم تسجيل الدخول بنجاح.`);
+            } else {
+                document.getElementById('login-error').classList.remove('hidden');
+            }
+        }
+
+        function addNewSystemUser() {
+            const uName = document.getElementById('new-user-name').value.trim();
+            const uPass = document.getElementById('new-user-pass').value.trim();
+            const uRole = document.getElementById('new-user-role').value;
+
+            if (!uName || !uPass) {
+                showToast('يرجى إدخال اسم المستخدم وكلمة المرور!', 'error');
+                return;
+            }
+
+            let users = getSystemUsers();
+            if (users.some(u => u.username === uName)) {
+                showToast('اسم المستخدم موجود مسبقاً!', 'error');
+                return;
+            }
+
+            let permissions = [];
+            if (uRole === 'مشرف / مدير (Admin)') {
+                permissions = ['registration', 'import', 'files', 'duplicates', 'records', 'settings'];
+            } else {
+                document.querySelectorAll('.perm-checkbox:checked').forEach(cb => {
+                    permissions.push(cb.value);
+                });
+            }
+
+            users.push({ username: uName, password: uPass, role: uRole, permissions: permissions });
+            saveSystemUsers(users);
+            
+            document.getElementById('new-user-name').value = '';
+            document.getElementById('new-user-pass').value = '';
+            renderUsersTable();
+            showToast('تمت إضافة المستخدم وتحديد صلاحياته بنجاح!');
+        }
+
+        function deleteSystemUser(username) {
+            if (username === 'Azrougali') {
+                showToast('لا يمكن حذف المستخدم الأساسي للنظام!', 'error');
+                return;
+            }
+            let users = getSystemUsers();
+            users = users.filter(u => u.username !== username);
+            saveSystemUsers(users);
+            renderUsersTable();
+            showToast('تم حذف المستخدم بنجاح.');
+        }
+
+        function renderUsersTable() {
+            const users = getSystemUsers();
+            const tbody = document.getElementById('table-users-body');
+            if (!tbody) return;
+
+            tbody.innerHTML = users.map(u => {
+                let permLabels = u.permissions ? u.permissions.map(p => {
+                    if(p==='registration') return 'تسجيل';
+                    if(p==='import') return 'استيراد';
+                    if(p==='files') return 'أرشيف';
+                    if(p==='duplicates') return 'مكرر';
+                    if(p==='records') return 'سجل';
+                    if(p==='settings') return 'إعدادات';
+                    return p;
+                }).join(', ') : 'كل الصلاحيات';
+
+                return `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-2.5 font-bold text-slate-800"><i class="fa-solid fa-user text-brand-blue ml-1"></i>${u.username}</td>
+                        <td class="p-2.5">
+                            <span class="bg-blue-50 text-brand-blue font-bold px-2 py-0.5 rounded text-[11px] border border-blue-100 block mb-1">${u.role}</span>
+                            <span class="text-[10px] text-slate-500">الصلاحيات: ${permLabels}</span>
+                        </td>
+                        <td class="p-2.5 text-center">
+                            ${u.username !== 'Azrougali' ? `<button onclick="deleteSystemUser('${u.username}')" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-[11px] font-bold"><i class="fa-solid fa-trash"></i> حذف</button>` : '<span class="text-slate-400 text-[10px]">المدير الرئيسي</span>'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function applyUserPermissionsUI() {
+            const role = sessionStorage.getItem('sonelgaz_current_role');
+            let perms = [];
+            try {
+                perms = JSON.parse(sessionStorage.getItem('sonelgaz_current_perms') || '[]');
+            } catch(e) {}
+
+            if (role === 'مشرف / مدير (Admin)') return;
+
+            const allTabs = ['registration', 'import', 'files', 'duplicates', 'records', 'settings'];
+            allTabs.forEach(tabId => {
+                const btn = document.getElementById('tab-' + tabId);
+                if (btn) {
+                    if (perms.includes(tabId)) {
+                        btn.style.display = 'flex';
+                    } else {
+                        btn.style.display = 'none';
+                    }
+                }
+            });
+
+            const activeTabBtn = document.querySelector('.tab-btn.active');
+            if (activeTabBtn && activeTabBtn.style.display === 'none') {
+                const firstAllowed = allTabs.find(t => perms.includes(t));
+                if (firstAllowed) {
+                    switchTab(firstAllowed);
+                }
+            }
+        }
+        // =========================================================================
+
+        function handleLogout() {
+            sessionStorage.removeItem('sonelgaz_logged');
+            sessionStorage.removeItem('sonelgaz_current_user');
+            sessionStorage.removeItem('sonelgaz_current_role');
+            sessionStorage.removeItem('sonelgaz_current_perms');
+            location.reload();
+        }
+
+        function initCloudListeners() {
+            if (!db) return;
+
+            db.ref('mainList').on('value', (snapshot) => {
+                const data = snapshot.val();
+                mainList = data ? Object.values(data) : [];
+                renderCustomerList();
+                updateStats();
+            });
+
+            db.ref('registrations').on('value', (snapshot) => {
+                const data = snapshot.val();
+                registrations = [];
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        registrations.push({ ...data[key], firebaseKey: key });
+                    });
+                }
+                renderCustomerList();
+                renderRecordsTable();
+                checkDuplicatesAndAlerts();
+                updateStats();
+            });
+
+            db.ref('savedFiles').on('value', (snapshot) => {
+                const data = snapshot.val();
+                savedFiles = [];
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        const fileObj = { ...data[key], firebaseKey: key };
+                        savedFiles.push(fileObj);
+                        if (fileObj.isActive) {
+                            activeFileKey = key;
+                        }
+                    });
+                }
+                renderFilesArchiveTable();
+                updateActiveFileDisplay();
+                renderCustomerList();
+                renderRecordsTable();
+            });
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            const targetBtn = document.getElementById('tab-' + tabId);
+            if(targetBtn) targetBtn.classList.add('active');
+
+            document.querySelectorAll('main > section').forEach(sec => sec.classList.add('hidden'));
+            const targetSec = document.getElementById('sec-' + tabId);
+            if(targetSec) targetSec.classList.remove('hidden');
+        }
+
+        function handleQualiteChange() {
+            const qualite = document.getElementById('reg-qualite').value;
+            const receiverInput = document.getElementById('reg-receiver');
+            const customerName = document.getElementById('reg-fullname').value;
+
+            if (qualite === "L'abonné(e)") {
+                receiverInput.value = customerName;
+                receiverInput.readOnly = true;
+                receiverInput.classList.add('bg-slate-100');
+                receiverInput.classList.remove('bg-white');
+            } else {
+                receiverInput.readOnly = false;
+                receiverInput.value = '';
+                receiverInput.placeholder = 'أدخل اسم المستلم يدوياً';
+                receiverInput.classList.remove('bg-slate-100');
+                receiverInput.classList.add('bg-white');
+                receiverInput.focus();
+            }
+        }
+
+        function handleCustomerNameChange(name) {
+            const qualite = document.getElementById('reg-qualite').value;
+            if (qualite === "L'abonné(e)") {
+                document.getElementById('reg-receiver').value = name;
+            }
+        }
+
+        function handleIdTypeChange() {
+            validateIdNumber();
+        }
+
+        function validateIdNumber() {
+            const idType = document.getElementById('reg-id-type').value;
+            const input = document.getElementById('reg-id-number');
+            const errorMsg = document.getElementById('id-error-msg');
+            const value = input.value.replace(/\D/g, '');
+            input.value = value;
+
+            if (idType === "Carte nationale d'identité") {
+                if (value.length > 0 && value.length !== 18) {
+                    errorMsg.innerText = 'بطاقة التعريف الوطنية تتطلب 18 رقماً بالضبط!';
+                    errorMsg.classList.remove('hidden');
+                    input.classList.add('border-red-500', 'bg-red-50');
+                    return false;
+                } else {
+                    errorMsg.classList.add('hidden');
+                    input.classList.remove('border-red-500', 'bg-red-50');
+                }
+            } else {
+                errorMsg.classList.add('hidden');
+                input.classList.remove('border-red-500', 'bg-red-50');
+            }
+            return true;
+        }
+
+        function validateSerialNumber(deviceNum) {
+            const input = document.getElementById(`reg-sn-${deviceNum}`);
+            const errorMsg = document.getElementById(`sn${deviceNum}-error-msg`);
+            const value = input.value.replace(/\D/g, '');
+            input.value = value;
+
+            if (value.length > 0 && value.length !== 18) {
+                errorMsg.classList.remove('hidden');
+                input.classList.add('border-red-500', 'bg-red-50');
+            } else {
+                errorMsg.classList.add('hidden');
+                input.classList.remove('border-red-500', 'bg-red-50');
+            }
+        }
+
+        function renderCustomerList() {
+            const box = document.getElementById('customer-list-box');
+            if (mainList.length === 0) {
+                box.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs">لا توجد قائمة محملة في السحابة.</div>`;
+                return;
+            }
+
+            const registeredRefs = new Set(
+                registrations
+                    .filter(r => r.fileKey === activeFileKey && r.reference)
+                    .map(r => r.reference.toLowerCase().trim())
+            );
+
+            const availableList = mainList.filter(c => !c.reference || !registeredRefs.has(c.reference.toLowerCase().trim()));
+
+            if (availableList.length === 0) {
+                box.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs font-bold text-emerald-600">تم تسجيل جميع الزبائن في هذه القائمة بنجاح!</div>`;
+                return;
+            }
+
+            box.innerHTML = availableList.map((c) => `
+                <div onclick="selectCustomerByObj('${c.reference}', '${c.fullname}')" class="p-3 bg-slate-50 hover:bg-blue-50/60 border rounded-xl cursor-pointer transition-all space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-xs text-slate-800">${c.fullname}</span>
+                        <span class="text-[10px] font-mono bg-blue-100 text-brand-blue px-2 py-0.5 rounded-md font-bold">${c.reference || 'N/A'}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 truncate">${c.location}</p>
+                </div>
+            `).join('');
+        }
+
+        function filterCustomerList() {
+            const q = document.getElementById('cust-search').value.toLowerCase();
+            
+            const registeredRefs = new Set(
+                registrations
+                    .filter(r => r.fileKey === activeFileKey && r.reference)
+                    .map(r => r.reference.toLowerCase().trim())
+            );
+
+            const availableList = mainList.filter(c => !c.reference || !registeredRefs.has(c.reference.toLowerCase().trim()));
+
+            const filtered = availableList.filter(c => 
+                (c.fullname && c.fullname.toLowerCase().includes(q)) || 
+                (c.reference && c.reference.toLowerCase().includes(q))
+            );
+
+            const box = document.getElementById('customer-list-box');
+            if (filtered.length === 0) {
+                box.innerHTML = `<div class="text-center py-4 text-slate-400 text-xs">لا توجد نتائج مطابقة أو تم تسجيل الزبون مسبقاً.</div>`;
+                return;
+            }
+
+            box.innerHTML = filtered.map((c) => `
+                <div onclick="selectCustomerByObj('${c.reference}', '${c.fullname}')" class="p-3 bg-slate-50 hover:bg-blue-50/60 border rounded-xl cursor-pointer transition-all space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-xs text-slate-800">${c.fullname}</span>
+                        <span class="text-[10px] font-mono bg-blue-100 text-brand-blue px-2 py-0.5 rounded-md font-bold">${c.reference || 'N/A'}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 truncate">${c.location}</p>
+                </div>
+            `).join('');
+        }
+
+        function selectCustomerByObj(ref, name) {
+            const c = mainList.find(x => x.reference === ref && x.fullname === name);
+            if (c) {
+                document.getElementById('reg-reference').value = c.reference || '';
+                document.getElementById('reg-fullname').value = c.fullname || '';
+                document.getElementById('reg-location').value = c.location || '';
+                handleCustomerNameChange(c.fullname || '');
+            }
+        }
+
+        function checkReferenceInput(val) {
+            const cleanVal = val.trim();
+            const found = mainList.find(c => c.reference && c.reference.toLowerCase() === cleanVal.toLowerCase());
+            if (found) {
+                document.getElementById('reg-fullname').value = found.fullname;
+                document.getElementById('reg-location').value = found.location;
+                handleCustomerNameChange(found.fullname);
+            }
+        }
+
+       function saveRegistration(e) {
+    e.preventDefault();
+
+    const status = document.getElementById('reg-status').value;
+    const isPose = (status === 'تم التركيب');
+
+    let sn1 = document.getElementById('reg-sn-1').value.trim();
+    let sn2 = document.getElementById('reg-sn-2').value.trim();
+    let idType = document.getElementById('reg-id-type').value;
+    let idNumber = document.getElementById('reg-id-number').value.trim();
+    let receiver = document.getElementById('reg-receiver').value.trim();
+    const customDate = document.getElementById('reg-date-display').value.trim() || getFormattedDate();
+
+    // التحقق من طول الأرقام فقط إذا كانت حالة التركيب هي "تم التركيب"
+    if (isPose) {
+        if (sn1.length !== 18 || sn2.length !== 18) {
+            showToast('خطأ: يجب أن يتكون الرقم التسلسلي لكلا الجهازين من 18 رقماً بالضبط!', 'error');
+            return;
+        }
+
+        if (idType === "Carte nationale d'identité" && idNumber.length !== 18) {
+            showToast("خطأ: بطاقة التعريف الوطنية تتطلب 18 رقماً بالضبط!", 'error');
+            return;
+        }
+    } else {
+        // ملء الخانات بـ "-" تلقائياً إذا كانت الحالة غير "تم التركيب" ولم يُدخل المستخدم بياناتها
+        if (!receiver) receiver = '-';
+        if (!idNumber) idNumber = '-';
+        if (!sn1) sn1 = '-';
+        if (!sn2) sn2 = '-';
+    }
+
+    let signatureData = '';
+    if (hasSignature && signatureCanvas) {
+        signatureData = signatureCanvas.toDataURL('image/png');
+    }
+
+    const defaultEts = localStorage.getItem('sonelgaz_default_ets') || 'Ets Bendahmen touati';
+    const loggedUser = sessionStorage.getItem('sonelgaz_current_user') || 'Azrougali';
+    let rawNotes = document.getElementById('reg-notes').value || '';
+    
+    let finalNotes = rawNotes;
+    const userInfoStr = `[العون المسجل: ${loggedUser}]`;
+    if (!finalNotes.includes(loggedUser)) {
+        finalNotes = finalNotes ? `${finalNotes} ${userInfoStr}` : userInfoStr;
+    }
+
+    const entry = {
+        fileKey: activeFileKey || 'general',
+        timestamp: customDate,
+        ets: document.getElementById('reg-ets').value || defaultEts,
+        qualite: document.getElementById('reg-qualite').value,
+        receiver: receiver,
+        reference: document.getElementById('reg-reference').value,
+        fullname: document.getElementById('reg-fullname').value,
+        location: document.getElementById('reg-location').value || 'غير محدد',
+        idType: idType,
+        idNumber: idNumber,
+        sn1: sn1,
+        sn2: sn2,
+        status: status,
+        notes: finalNotes || '-',
+        signature: signatureData
+    };
+
+    if (!db) {
+        showToast('خطأ في الاتصال بالسحابة!', 'error');
+        return;
+    }
+
+    if (editingKey !== null) {
+        db.ref('registrations/' + editingKey).set(entry).then(() => {
+            editingKey = null;
+            document.getElementById('btn-save-submit').innerHTML = `<i class="fa-solid fa-floppy-disk"></i><span>حفظ العملية</span>`;
+            showToast('تم تحديث بيانات السجل بنجاح!');
+            resetForm();
+        });
+    } else {
+        db.ref('registrations').push(entry).then(() => {
+            showToast('تم حفظ التسجيل سحابياً بنجاح!');
+            resetForm();
+            setTimeout(() => {
+                checkMilestoneAfterSave();
+            }, 400);
+        });
+    }
+}
+
+        function checkMilestoneAfterSave() {
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+            const count = currentFileRegistrations.length;
+            const milestoneLimit = parseInt(localStorage.getItem('sonelgaz_milestone_size') || '30');
+
+            if (count > 0 && count % milestoneLimit === 0) {
+                document.getElementById('milestone-msg').innerText = `لقد أتممت ${count} زبوناً مسجلاً في هذا الكرطون بنجاح. هل تريد فتح كرطون جديد أم الاستمرار؟`;
+                openModal('modal-milestone');
+            }
+        }
+
+        function promptForNewBoxName() {
+            document.getElementById('new-box-input-container').classList.remove('hidden');
+            document.getElementById('btn-action-open-new-box').classList.add('hidden');
+            document.getElementById('btn-action-confirm-new-box').classList.remove('hidden');
+            document.getElementById('new-box-name-input').focus();
+        }
+
+        function createNewBox() {
+            const boxNameInput = document.getElementById('new-box-name-input').value.trim();
+            const newBoxName = boxNameInput !== '' ? boxNameInput : `Carton ${Date.now()}`;
+
+            const now = new Date();
+            const fileRecord = {
+                fileName: newBoxName,
+                importedAt: getFormattedDate(now) + ' ' + now.toLocaleTimeString('en-US', { hour12: false }),
+                customersCount: 0,
+                customersData: [],
+                isActive: true
+            };
+
+            if (db) {
+                savedFiles.forEach(f => {
+                    db.ref('savedFiles/' + f.firebaseKey + '/isActive').set(false);
+                });
+
+                const newFileRef = db.ref('savedFiles').push();
+                newFileRef.set(fileRecord).then(() => {
+                    activeFileKey = newFileRef.key;
+                    db.ref('mainList').set([]).then(() => {
+                        closeModal('modal-milestone');
+                        showToast(`تم فتح الكرطون الجديد "${newBoxName}" بنجاح!`);
+                        switchTab('registration');
+                    });
+                });
+            }
+        }
+
+        function handleLogoUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const base64String = evt.target.result;
+                localStorage.setItem('sonelgaz_logo_base64', base64String);
+                document.getElementById('logo-preview-img').src = base64String;
+                document.getElementById('logo-preview-box').classList.remove('hidden');
+                showToast('تم رفع وتخزين الشعار بنجاح!');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function saveAppSettings() {
+            const ets = document.getElementById('setting-default-ets').value.trim();
+            const milestone = document.getElementById('setting-milestone-size').value.trim();
+            const agencyName = document.getElementById('setting-agency-name').value.trim();
+
+            if (ets) localStorage.setItem('sonelgaz_default_ets', ets);
+            if (milestone) localStorage.setItem('sonelgaz_milestone_size', milestone);
+            if (agencyName) localStorage.setItem('sonelgaz_agency_name', agencyName);
+
+            document.getElementById('reg-ets').value = ets || 'Ets Bendahmen touati';
+            showToast('تم حفظ وتطبيق جميع الإعدادات بنجاح!');
+        }
+
+        function loadAppSettingsToForm() {
+            const ets = localStorage.getItem('sonelgaz_default_ets');
+            const milestone = localStorage.getItem('sonelgaz_milestone_size');
+            const agencyName = localStorage.getItem('sonelgaz_agency_name');
+            const logoBase64 = localStorage.getItem('sonelgaz_logo_base64');
+
+            if (ets) {
+                document.getElementById('setting-default-ets').value = ets;
+                document.getElementById('reg-ets').value = ets;
+            }
+            if (milestone) {
+                document.getElementById('setting-milestone-size').value = milestone;
+            }
+            if (agencyName) {
+                document.getElementById('setting-agency-name').value = agencyName;
+            }
+            if (logoBase64) {
+                document.getElementById('logo-preview-img').src = logoBase64;
+                document.getElementById('logo-preview-box').classList.remove('hidden');
+            }
+        }
+
+        function editRecord(key) {
+            const r = registrations.find(item => item.firebaseKey === key);
+            if (!r) return;
+
+            document.getElementById('reg-ets').value = r.ets;
+            document.getElementById('reg-qualite').value = r.qualite || "L'abonné(e)";
+            document.getElementById('reg-receiver').value = r.receiver;
+            document.getElementById('reg-reference').value = r.reference;
+            document.getElementById('reg-fullname').value = r.fullname;
+            document.getElementById('reg-location').value = r.location;
+            document.getElementById('reg-id-type').value = r.idType;
+            document.getElementById('reg-id-number').value = r.idNumber;
+            document.getElementById('reg-sn-1').value = r.sn1;
+            document.getElementById('reg-sn-2').value = r.sn2;
+            document.getElementById('reg-status').value = r.status || 'تم التركيب';
+            document.getElementById('reg-notes').value = r.notes !== '-' ? r.notes : '';
+            document.getElementById('reg-date-display').value = r.timestamp || getFormattedDate();
+
+            if (r.signature && signatureCtx) {
+                const img = new Image();
+                img.onload = function() {
+                    signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+                    signatureCtx.drawImage(img, 0, 0, signatureCanvas.width / (window.devicePixelRatio || 1), signatureCanvas.height / (window.devicePixelRatio || 1));
+                    hasSignature = true;
+                    document.getElementById('signature-placeholder').classList.add('hidden');
+                };
+                img.src = r.signature;
+            } else {
+                clearSignature();
+            }
+
+            handleQualiteChange();
+            if(r.qualite !== "L'abonné(e)") {
+                document.getElementById('reg-receiver').value = r.receiver;
+            }
+
+            editingKey = key;
+            document.getElementById('btn-save-submit').innerHTML = `<i class="fa-solid fa-pen-to-square"></i><span>تحديث السجل سحابياً</span>`;
+            switchTab('registration');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            showToast('جاري تعديل السجل الآن...');
+        }
+
+        function deleteRecord(key) {
+            document.getElementById('delete-modal-title').innerText = 'تأكيد حذف الزبون / الكاشف';
+            document.getElementById('delete-modal-msg').innerText = 'هل أنت متأكد من رغبتك في حذف هذا السجل نهائياً من السحابة؟';
+            
+            pendingDeleteCallback = function() {
+                if (db) {
+                    db.ref('registrations/' + key).remove().then(() => {
+                        showToast('تم حذف السجل بنجاح من السحابة.', 'error');
+                        closeModal('modal-delete');
+                    });
+                }
+            };
+            openModal('modal-delete');
+        }
+
+        function confirmDeleteAllRegistrations() {
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+            if (currentFileRegistrations.length === 0) {
+                showToast('لا توجد سجلات مسجلة لهذا الملف لحذفها!', 'error');
+                return;
+            }
+
+            document.getElementById('delete-modal-title').innerText = 'تأكيد حذف جميع التسجيلات';
+            document.getElementById('delete-modal-msg').innerText = 'هل أنت متأكد من رغبتك في حذف جميع السجلات المسجلة في هذا الملف نهائياً؟ لا يمكن التراجع عن هذه العملية.';
+
+            pendingDeleteCallback = function() {
+                if (db) {
+                    let promises = currentFileRegistrations.map(r => db.ref('registrations/' + r.firebaseKey).remove());
+                    Promise.all(promises).then(() => {
+                        showToast('تم حذف جميع التسجيلات بنجاح.', 'error');
+                        closeModal('modal-delete');
+                    });
+                }
+            };
+            openModal('modal-delete');
+        }
+
+        document.getElementById('btn-confirm-delete').onclick = function() {
+            if (pendingDeleteCallback) pendingDeleteCallback();
+        };
+
+        function resetForm() {
+            document.getElementById('form-registration').reset();
+            const defaultEts = localStorage.getItem('sonelgaz_default_ets') || 'Ets Bendahmen touati';
+            document.getElementById('reg-ets').value = defaultEts;
+            document.getElementById('reg-qualite').value = "L'abonné(e)";
+            handleQualiteChange();
+            clearSignature();
+            editingKey = null;
+            document.querySelectorAll('.border-red-500').forEach(el => el.classList.remove('border-red-500', 'bg-red-50'));
+            document.querySelectorAll('[id$="-error-msg"]').forEach(el => el.classList.add('hidden'));
+            document.getElementById('btn-save-submit').innerHTML = `<i class="fa-solid fa-floppy-disk"></i><span>حفظ العملية</span>`;
+            document.getElementById('reg-date-display').value = getFormattedDate();
+        }
+
+        function checkDuplicatesAndAlerts() {
+            const refCounts = {};
+            const nameCounts = {};
+            const sn1Counts = {};
+            const sn2Counts = {};
+            let duplicateItems = [];
+
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+
+            currentFileRegistrations.forEach(r => {
+                if (r.reference) refCounts[r.reference] = (refCounts[r.reference] || 0) + 1;
+                if (r.fullname) nameCounts[r.fullname] = (nameCounts[r.fullname] || 0) + 1;
+                if (r.sn1) sn1Counts[r.sn1] = (sn1Counts[r.sn1] || 0) + 1;
+                if (r.sn2) sn2Counts[r.sn2] = (sn2Counts[r.sn2] || 0) + 1;
+            });
+
+            currentFileRegistrations.forEach((r) => {
+                let reasons = [];
+                if (r.reference && refCounts[r.reference] > 1) reasons.push('مرجع مكرر');
+                if (r.fullname && nameCounts[r.fullname] > 1) reasons.push('اسم مكرر');
+                if (r.sn1 && sn1Counts[r.sn1] > 1) reasons.push('سيريال 1 مكرر');
+                if (r.sn2 && sn2Counts[r.sn2] > 1) reasons.push('سيريال 2 مكرر');
+
+                if (reasons.length > 0) {
+                    duplicateItems.push({ ...r, reason: reasons.join('، ') });
+                }
+            });
+
+            const badge = document.getElementById('badge-duplicates');
+            if (duplicateItems.length > 0) {
+                badge.innerText = duplicateItems.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+
+            renderDuplicatesTable(duplicateItems);
+            document.getElementById('stat-duplicates').innerText = duplicateItems.length;
+        }
+
+        function renderDuplicatesTable(items) {
+            const tbody = document.getElementById('table-duplicates-body');
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="12" class="text-center py-6 text-slate-400">لا توجد عناصر مكررة حالياً لهذا الملف.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(d => `
+                <tr class="hover:bg-slate-50 transition-all">
+                    <td class="p-3 font-mono font-bold text-brand-blue">${d.reference}</td>
+                    <td class="p-3 font-bold text-slate-800">${d.fullname}</td>
+                    <td class="p-3 text-slate-600">${d.idType}</td>
+                    <td class="p-3 font-mono">${d.idNumber}</td>
+                    <td class="p-3 font-semibold text-slate-600">${d.qualite || "L'abonné(e)"}</td>
+                    <td class="p-3 font-semibold text-slate-800">${d.receiver}</td>
+                    <td class="p-3 font-mono text-xs text-slate-700">${d.sn1} / ${d.sn2}</td>
+                    <td class="p-3 font-bold text-brand-darkBlue">${d.ets}</td>
+                    <td class="p-3 font-mono font-bold text-slate-700 whitespace-nowrap min-w-[110px]">${d.timestamp || ''}</td>
+                    <td class="p-3 text-center">
+                        ${d.signature ? `<img src="${d.signature}" class="h-8 mx-auto border rounded bg-white p-0.5" />` : '<span class="text-slate-400 text-[10px]">بدون توقيع</span>'}
+                    </td>
+                    <td class="p-3"><span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-md text-[10px]">${d.reason}</span></td>
+                    <td class="p-3 text-center space-x-1 space-x-reverse">
+                        <button onclick="editRecord('${d.firebaseKey}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm"><i class="fa-solid fa-pen"></i> تعديل</button>
+                        <button onclick="deleteRecord('${d.firebaseKey}')" class="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm"><i class="fa-solid fa-trash"></i> حذف</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderRecordsTable() {
+            filterRecordsTable();
+        }
+
+        function resetRecordsFilters() {
+            document.getElementById('records-search-input').value = '';
+            document.getElementById('filter-date-from').value = '';
+            document.getElementById('filter-date-to').value = '';
+            document.getElementById('filter-status-select').value = '';
+            filterRecordsTable();
+        }
+
+        function filterRecordsTable() {
+            const query = document.getElementById('records-search-input').value.toLowerCase().trim();
+            const dateFrom = document.getElementById('filter-date-from').value;
+            const dateTo = document.getElementById('filter-date-to').value;
+            const statusFilter = document.getElementById('filter-status-select').value;
+            const tbody = document.getElementById('table-records-body');
+
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+
+            const filtered = currentFileRegistrations.filter(r => {
+                if (query) {
+                    const ref = (r.reference || '').toLowerCase();
+                    const idNum = (r.idNumber || '').toLowerCase();
+                    const sn1 = (r.sn1 || '').toLowerCase();
+                    const sn2 = (r.sn2 || '').toLowerCase();
+                    const fullname = (r.fullname || '').toLowerCase();
+                    const receiver = (r.receiver || '').toLowerCase();
+
+                    const matchesText = ref.includes(query) || 
+                                        idNum.includes(query) || 
+                                        sn1.includes(query) || 
+                                        sn2.includes(query) || 
+                                        fullname.includes(query) || 
+                                        receiver.includes(query);
+                    if (!matchesText) return false;
+                }
+
+                if (statusFilter) {
+                    if ((r.status || 'تم التركيب') !== statusFilter) return false;
+                }
+
+                if (dateFrom || dateTo) {
+                    if (!r.timestamp) return false;
+                    const parts = r.timestamp.split('/');
+                    if (parts.length === 3) {
+                        const recordDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                        if (dateFrom && recordDateStr < dateFrom) return false;
+                        if (dateTo && recordDateStr > dateTo) return false;
+                    } else {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="14" class="text-center py-6 text-slate-400">لا توجد سجلات مسجلة مطابقة لخيارات الفلترة المحددة.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map((r) => {
+                let statusVal = r.status || 'تم التركيب';
+                let statusBadge = `<span class="bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded-full text-[10px]">Pose (تم التركيب)</span>`;
+                
+                if(statusVal === 'Dja Pose') {
+                    statusBadge = `<span class="bg-purple-100 text-purple-800 font-bold px-2.5 py-1 rounded-full text-[10px]">Dja Pose (منذ مدة)</span>`;
+                } else if(statusVal === 'غائب') {
+                    statusBadge = `<span class="bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded-full text-[10px]">Absent (غائب)</span>`;
+                } else if(statusVal === 'رفض التركيب') {
+                    statusBadge = `<span class="bg-red-100 text-red-800 font-bold px-2.5 py-1 rounded-full text-[10px]">Refus (رفض)</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-50 transition-all">
+                        <td class="p-3 font-mono font-bold text-brand-blue">${r.reference}</td>
+                        <td class="p-3 font-bold text-slate-800">${r.fullname}</td>
+                        <td class="p-3 text-slate-600">${r.location}</td>
+                        <td class="p-3 font-mono font-bold text-slate-700 whitespace-nowrap min-w-[110px]">${r.timestamp || ''}</td>
+                        <td class="p-3 font-mono font-semibold text-slate-700">${r.sn1}</td>
+                        <td class="p-3 font-mono font-semibold text-slate-700">${r.sn2}</td>
+                        <td class="p-3 text-slate-600">${r.idType}</td>
+                        <td class="p-3 font-mono">${r.idNumber}</td>
+                        <td class="p-3 font-semibold text-slate-600">${r.qualite || "L'abonné(e)"}</td>
+                        <td class="p-3 font-semibold text-slate-800">${r.receiver}</td>
+                        <td class="p-3 font-bold text-brand-darkBlue">${r.ets}</td>
+                        <td class="p-3 text-center">${statusBadge}</td>
+                        <td class="p-3 text-center">
+                            ${r.signature ? `<img src="${r.signature}" class="h-8 mx-auto border rounded bg-white p-0.5" />` : '<span class="text-slate-400 text-[10px]">بدون توقيع</span>'}
+                        </td>
+                        <td class="p-3 text-center space-x-1 space-x-reverse">
+                            <button onclick="editRecord('${r.firebaseKey}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm"><i class="fa-solid fa-pen"></i> تعديل</button>
+                            <button onclick="deleteRecord('${r.firebaseKey}')" class="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm"><i class="fa-solid fa-trash"></i> حذف</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function handleStatusChange() {
+    const status = document.getElementById('reg-status').value;
+    const isPose = (status === 'تم التركيب');
+
+    const idTypeSelect = document.getElementById('reg-id-type');
+    const idNumInput = document.getElementById('reg-id-number');
+    const sn1Input = document.getElementById('reg-sn-1');
+    const sn2Input = document.getElementById('reg-sn-2');
+    const receiverInput = document.getElementById('reg-receiver');
+
+    if (!isPose) {
+        // إزالة الإجبارية عند اختيار أي حالة غير Pose
+        idTypeSelect.required = false;
+        idNumInput.required = false;
+        sn1Input.required = false;
+        sn2Input.required = false;
+        receiverInput.required = false;
+
+        // إخفاء تنبيهات الخطأ إن وجدت
+        document.querySelectorAll('.border-red-500').forEach(el => el.classList.remove('border-red-500', 'bg-red-50'));
+        document.querySelectorAll('[id$="-error-msg"]').forEach(el => el.classList.add('hidden'));
+    } else {
+        // إعادة الإجبارية لحالة Pose
+        idTypeSelect.required = true;
+        idNumInput.required = true;
+        sn1Input.required = true;
+        sn2Input.required = true;
+        handleQualiteChange();
+    }
+}
+
+        function updateStats() {
+            const totalInList = mainList.length;
+            
+            let installedCount = 0;
+            const completedRefs = new Set();
+
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+
+            currentFileRegistrations.forEach(r => {
+                if (r.status === 'تم التركيب' || r.status === 'Dja Pose') installedCount++;
+                if (r.reference) completedRefs.add(r.reference.toLowerCase());
+            });
+
+            let remainingCount = 0;
+            if (totalInList > 0) {
+                mainList.forEach(c => {
+                    if (c.reference && !completedRefs.has(c.reference.toLowerCase())) {
+                        remainingCount++;
+                    }
+                });
+                document.getElementById('stat-remaining').innerText = `${remainingCount} من أصل ${totalInList}`;
+            } else {
+                document.getElementById('stat-remaining').innerText = `0 من أصل 0`;
+            }
+
+            document.getElementById('stat-installed').innerText = installedCount;
+        }
+
+        function handleExcelImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (json.length > 0) {
+                    let newList = [];
+                    json.forEach((row, index) => {
+                        if (row && row.length > 0) {
+                            const col1 = row[0] !== undefined ? String(row[0]).trim() : '';
+                            const col2 = row[1] !== undefined ? String(row[1]).trim() : '';
+                            const col3 = row[2] !== undefined ? String(row[2]).trim() : 'غير محدد';
+
+                            if (index === 0 && (col1.includes('مرجع') || col1.toLowerCase().includes('ref') || col2.includes('اسم'))) {
+                                return;
+                            }
+
+                            if (col1 !== '' || col2 !== '') {
+                                newList.push({
+                                    reference: col1,
+                                    fullname: col2,
+                                    location: col3
+                                });
+                            }
+                        }
+                    });
+
+                    const now = new Date();
+                    const fileRecord = {
+                        fileName: file.name,
+                        importedAt: getFormattedDate(now) + ' ' + now.toLocaleTimeString('en-US', { hour12: false }),
+                        customersCount: newList.length,
+                        customersData: newList,
+                        isActive: true
+                    };
+
+                    if (db) {
+                        savedFiles.forEach(f => {
+                            db.ref('savedFiles/' + f.firebaseKey + '/isActive').set(false);
+                        });
+
+                        const newFileRef = db.ref('savedFiles').push();
+                        newFileRef.set(fileRecord).then(() => {
+                            activeFileKey = newFileRef.key;
+                            db.ref('mainList').set(newList).then(() => {
+                                const summaryBox = document.getElementById('import-summary');
+                                summaryBox.innerText = `تم استيراد وحفظ ملف "${file.name}" وتوثيق ${newList.length} زبون بنجاح!`;
+                                summaryBox.classList.remove('hidden');
+                                showToast(`تم استيراد الملف "${file.name}" بنجاح!`);
+                                switchTab('files');
+                            });
+                        });
+                    }
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderFilesArchiveTable() {
+            const tbody = document.getElementById('table-files-body');
+            document.getElementById('badge-files-count').innerText = savedFiles.length;
+
+            if (savedFiles.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-slate-400">لا يوجد أي ملف محفوظ في الأرشيف حتى الآن.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = savedFiles.map((f) => `
+                <tr class="hover:bg-slate-50 transition-all ${f.isActive ? 'bg-blue-50/50' : ''}">
+                    <td class="p-3 font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel text-emerald-600 text-base"></i>
+                        <span>${f.fileName}</span>
+                    </td>
+                    <td class="p-3 font-mono text-slate-600 font-medium">${f.importedAt || '-'}</td>
+                    <td class="p-3 text-center"><span class="bg-slate-100 font-bold px-2.5 py-1 rounded-full text-slate-700">${f.customersCount} زبون</span></td>
+                    <td class="p-3 text-center">
+                        ${f.isActive ? 
+                            `<span class="bg-emerald-100 text-emerald-800 font-extrabold px-3 py-1 rounded-full text-[11px]"><i class="fa-solid fa-circle-check"></i> مفتوح وحالي</span>` : 
+                            `<span class="bg-slate-100 text-slate-500 font-semibold px-2.5 py-1 rounded-full text-[11px]">مغلق / مؤرشف</span>`}
+                    </td>
+                    <td class="p-3 text-center space-x-1 space-x-reverse">
+                        ${!f.isActive ? `<button onclick="openFileFromArchive('${f.firebaseKey}')" class="bg-brand-blue hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] shadow-sm"><i class="fa-solid fa-folder-open"></i> فتح</button>` : ''}
+                        <button onclick="openEditFileNameModal('${f.firebaseKey}', '${f.fileName}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] shadow-sm"><i class="fa-solid fa-pen"></i> تعديل</button>
+                        <button onclick="deleteFileFromArchive('${f.firebaseKey}')" class="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] shadow-sm"><i class="fa-solid fa-trash"></i> حذف</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateActiveFileDisplay() {
+            const activeFile = savedFiles.find(f => f.isActive);
+            if (activeFile) {
+                activeFileKey = activeFile.firebaseKey;
+                document.getElementById('active-file-name').innerText = activeFile.fileName;
+                document.getElementById('active-file-stats').innerHTML = `عدد الزبائن: <strong class="text-white">${activeFile.customersCount}</strong>`;
+            } else {
+                activeFileKey = null;
+                document.getElementById('active-file-name').innerText = 'لا يوجد أي ملف نشط حالياً';
+                document.getElementById('active-file-stats').innerHTML = `عدد الزبائن: <strong class="text-white">0</strong>`;
+            }
+        }
+
+        function openFileFromArchive(key) {
+            const targetFile = savedFiles.find(f => f.firebaseKey === key);
+            if (!targetFile || !db) return;
+
+            savedFiles.forEach(f => {
+                db.ref('savedFiles/' + f.firebaseKey + '/isActive').set(false);
+            });
+
+            db.ref('savedFiles/' + key + '/isActive').set(true).then(() => {
+                activeFileKey = key;
+                db.ref('mainList').set(targetFile.customersData || []).then(() => {
+                    showToast(`تم فتح الملف "${targetFile.fileName}" بنجاح!`);
+                    renderRecordsTable();
+                    checkDuplicatesAndAlerts();
+                    updateStats();
+                    switchTab('registration');
+                });
+            });
+        }
+
+        function confirmCloseCurrentFile() {
+            document.getElementById('delete-modal-title').innerText = 'إغلاق الملف الحالي';
+            document.getElementById('delete-modal-msg').innerText = 'هل أنت متأكد من إغلاق الملف النشط حالياً وتفريغ القائمة؟';
+
+            pendingDeleteCallback = function() {
+                if (db) {
+                    savedFiles.forEach(f => {
+                        db.ref('savedFiles/' + f.firebaseKey + '/isActive').set(false);
+                    });
+                    activeFileKey = null;
+                    db.ref('mainList').set([]).then(() => {
+                        showToast('تم إغلاق الملف الحالي وتفريغ القائمة بنجاح.', 'info');
+                        renderRecordsTable();
+                        checkDuplicatesAndAlerts();
+                        updateStats();
+                        closeModal('modal-delete');
+                    });
+                }
+            };
+            openModal('modal-delete');
+        }
+
+        function openEditFileNameModal(key, oldName) {
+            const input = document.getElementById('modal-file-name-input');
+            input.value = oldName;
+            
+            document.getElementById('btn-save-file-name').onclick = function() {
+                const newName = input.value.trim();
+                if (newName !== '' && db) {
+                    db.ref('savedFiles/' + key + '/fileName').set(newName).then(() => {
+                        showToast('تم تعديل اسم الملف بنجاح!');
+                        closeModal('modal-edit-file');
+                    });
+                }
+            };
+            openModal('modal-edit-file');
+        }
+
+        function deleteFileFromArchive(key) {
+            document.getElementById('delete-modal-title').innerText = 'تأكيد حذف الملف من الأرشيف';
+            document.getElementById('delete-modal-msg').innerText = 'هل أنت متأكد من حذف هذا الملف نهائياً من الأرشيف السحابي؟';
+
+            pendingDeleteCallback = function() {
+                const f = savedFiles.find(x => x.firebaseKey === key);
+                if (db) {
+                    if (f && f.isActive) {
+                        db.ref('mainList').set([]);
+                        activeFileKey = null;
+                    }
+                    db.ref('savedFiles/' + key).remove().then(() => {
+                        showToast('تم حذف الملف من الأرشيف السحابي.', 'error');
+                        closeModal('modal-delete');
+                    });
+                }
+            };
+            openModal('modal-delete');
+        }
+
+        function exportToExcel() {
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+
+            if (currentFileRegistrations.length === 0) {
+                showToast('لا توجد سجلات مسجلة لهذا الملف لتصديرها!', 'error');
+                return;
+            }
+
+            const todayFilenameDate = getFormattedDateForFilename();
+
+            const exportData = currentFileRegistrations.map(r => ({
+                "Référence": r.reference,
+                "Nom & Prénom": r.fullname,
+                "Adresse": r.location,
+                "Date pose": r.timestamp || getFormattedDate(),
+                "N° série 1": r.sn1,
+                "N° série 2": r.sn2,
+                "Type pièce": r.idType,
+                "N° pièce": r.idNumber,
+                "Qualité représentant": r.qualite || "L'abonné(e)",
+                "Nom représentant": r.receiver,
+                "Installateur": r.ets,
+                "Status": r.status || "تم التركيب",
+                "Signature": r.signature ? "موقع" : "بدون توقيع"
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Liste");
+
+            XLSX.writeFile(workbook, `Liste de Pose ${todayFilenameDate}.xlsx`);
+            showToast('تم تصدير ملف Excel بنجاح!');
+        }
+
+     // ================= FINAL FIXED PDF ENGINE =================
+        async function exportToPDF() {
+            const currentFileRegistrations = registrations.filter(r => r.fileKey === activeFileKey);
+
+            if (currentFileRegistrations.length === 0) {
+                showToast('لا توجد سجلات مسجلة لهذا الملف لتصديرها بصيغة PDF!', 'error');
+                return;
+            }
+
+            // التحقق الذكي والمرن من وجود المكتبة
+            let jsPDFLib = window.jspdf ? window.jspdf.jsPDF : (window.jsPDF || null);
+
+            if (!jsPDFLib) {
+                showToast('تعذر الاتصال بمكتبة jsPDF، يرجى التأكد من الاتصال بالإنترنت أو تحديث الصفحة.', 'error');
+                return;
+            }
+
+            showToast('جاري إنشاء وتحميل ملف PDF بالهوامش النظامية...', 'info');
+
+            try {
+                const todayFilenameDate = getFormattedDateForFilename();
+                const agencyName = localStorage.getItem('sonelgaz_agency_name') || 'Agence Mosta Ouast';
+                const etsName = localStorage.getItem('sonelgaz_default_ets') || 'Ets Bendahmen touati';
+                const logoBase64 = localStorage.getItem('sonelgaz_logo_base64');
+
+                const pdf = new jsPDFLib('landscape', 'mm', 'a4');
+
+                const pageWidth = 297;   
+                const margin = 15;       // هامش 1.5 سم (15 مم)
+                const printableWidth = pageWidth - (margin * 2); // 267 مم
+
+                // 8 أسطر في كل صفحة لضمان عدم الاكتظاظ أو تقطيع الأسطر
+                const rowsPerChunk = 19;
+                let chunks = [];
+                for (let i = 0; i < currentFileRegistrations.length; i += rowsPerChunk) {
+                    chunks.push(currentFileRegistrations.slice(i, i + rowsPerChunk));
+                }
+
+                for (let pageIndex = 0; pageIndex < chunks.length; pageIndex++) {
+                    const chunk = chunks[pageIndex];
+
+                    if (pageIndex > 0) {
+                        pdf.addPage();
+                    }
+
+                    const tempContainer = document.createElement('div');
+                    tempContainer.style.position = 'fixed';
+                    tempContainer.style.left = '-9999px';
+                    tempContainer.style.top = '-9999px';
+                    tempContainer.style.width = '1120px';
+                    tempContainer.style.background = '#ffffff';
+                    tempContainer.style.padding = '15px 20px';
+                    tempContainer.style.direction = 'ltr';
+                    tempContainer.style.fontFamily = "'Cairo', sans-serif";
+
+                    let logoHtml = logoBase64 ? `<img src="${logoBase64}" style="height: 42px; object-fit: contain;" />` : '';
+
+                    tempContainer.innerHTML = `
+                        <div style="text-align: center; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 20px;">
+                            ${logoHtml}
+                            <div>
+                                <h2 style="font-size: 16px; font-weight: bold; color: #003366; margin: 0;">SONELGAZ - LISTE DE POSE DES DÉTECTEURS DE CO</h2>
+                                <p style="font-size: 10px; color: #555; margin: 3px 0 0 0;">${agencyName}  | ${etsName} (Page ${pageIndex + 1} / ${chunks.length})</p>
+                            </div>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 9px;">
+                            <thead>
+                                <tr style="background-color: #00539B; color: white;">
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Référence</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Nom & Prénom</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Adresse</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px; min-width: 95px;">Date pose</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">N° série 1</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">N° série 2</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Type pièce</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">N° pièce</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Qualité représentant</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Nom représentant</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px;">Installateur</th>
+                                    <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center;">Signature</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${chunk.map(r => `
+                                    <tr style="height: 32px;">
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-family: monospace;">${r.reference || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-weight: bold;">${r.fullname || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px;">${r.location || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-family: monospace; font-weight: bold;">${r.timestamp || getFormattedDate()}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-family: monospace;">${r.sn1 || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-family: monospace;">${r.sn2 || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px;">${r.idType || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; font-family: monospace;">${r.idNumber || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px;">${r.qualite || "L'abonné(e)"}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px;">${r.receiver || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px;">${r.ets || ''}</td>
+                                        <td style="border: 1px solid #cbd5e1; padding: 4px; text-align: center;">
+                                            ${r.signature ? `<img src="${r.signature}" style="height: 20px; display: block; margin: 0 auto;" />` : '-'}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+
+                    document.body.appendChild(tempContainer);
+
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
+                    const canvas = await html2canvas(tempContainer, { 
+                        scale: 2, 
+                        useCORS: true, 
+                        logging: false, 
+                        windowWidth: 1200 
+                    });
+
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgHeight = (canvas.height * printableWidth) / canvas.width;
+                    
+                    pdf.addImage(imgData, 'PNG', margin, margin, printableWidth, imgHeight);
+                    document.body.removeChild(tempContainer);
+                }
+
+                pdf.save(`Liste de Pose ${todayFilenameDate}.pdf`);
+                showToast('تم تحميل ملف PDF بنجاح وبشكل احترافي!');
+            } catch (error) {
+                console.error("PDF Export Error:", error);
+                showToast('حدث خطأ أثناء إنشاء ملف PDF، يرجى المحاولة مرة أخرى.', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
